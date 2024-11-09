@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 sns.set(style='whitegrid')
 
 # Replace with the actual path to your general population PGN file
-GENERAL_PGN_FILE_PATH = '/Users/benjaminrosales/Desktop/Chess Study/C omparison Games/lichess_db_standard_rated_2017-05.pgn'  # **Update this path**
+GENERAL_PGN_FILE_PATH = '/Users/benjaminrosales/Desktop/Chess Study/Comparison Games/lichess_db_standard_rated_2017-05.pgn'
 
 # Path to your Stockfish executable
 STOCKFISH_PATH = '/opt/homebrew/bin/stockfish'  # **Update this path**
@@ -43,6 +43,24 @@ ADHD_USERNAMES = ['teoeo', 'Tobermorey', 'apostatlet', 'LovePump1000', 'Stuntman
 
 # ----------------------- Helper Functions -----------------------
 
+def debug_data_pipeline(df, stage_name):
+    print(f"\n=== Debugging {stage_name} ===")
+    print(f"DataFrame shape: {df.shape}")
+    print("\nColumns present:", df.columns.tolist())
+    print("\nSample of data (first 5 rows):")
+    print(df.head())
+    print("\nValue counts for key columns:")
+    if 'Group' in df.columns:
+        print("\nGroup distribution:")
+        print(df['Group'].value_counts())
+    if 'ErrorCategory' in df.columns:
+        print("\nErrorCategory distribution:")
+        print(df['ErrorCategory'].value_counts())
+    print("\nNull values in each column:")
+    print(df.isnull().sum())
+    print("="*50)
+
+
 def safe_int(value, default=None):
     try:
         return int(value)
@@ -50,14 +68,20 @@ def safe_int(value, default=None):
         return default
 
 def parse_clock_time(comment):
-    # Extract clock time from comment, e.g., "%clk 1:23:45"
-    match = re.search(r'%clk\s+([\d:]+)', comment)
+    # Extract clock time from comment, e.g., "%clk 1:23:45.678"
+    match = re.search(r'%clk\s+([\d:.]+)', comment)
     if match:
         time_str = match.group(1)
-        time_parts = [int(part) for part in time_str.split(':')]
-        seconds = sum(x * t for x, t in zip([3600, 60, 1], reversed(time_parts)))
+        time_parts = [float(part) for part in time_str.split(':')]
+        # Weights for hours, minutes, seconds
+        weights = [3600, 60, 1]
+        weights = weights[-len(time_parts):]
+        seconds = sum(w * t for w, t in zip(weights, time_parts))
         return seconds
-    return None
+    else:
+        # Uncomment the following line to debug clock time parsing
+        # print(f"Clock time not found in comment: {comment}")
+        return None
 
 def parse_evaluation(comment):
     # Extract evaluation from comment, e.g., "%eval 0.34"
@@ -69,7 +93,10 @@ def parse_evaluation(comment):
             return None
         else:
             return float(eval_str)
-    return None
+    else:
+        # Uncomment the following line to debug evaluation parsing
+        # print(f"Eval not found in comment: {comment}")
+        return None
 
 def categorize_error(eval_change):
     if eval_change is None:
@@ -162,6 +189,9 @@ def perform_statistical_test(var, data, test_results, test_type='independent_t')
 
 def perform_chi_squared_test(category_var, data, test_results):
     contingency_table = pd.crosstab(data['Group'], data[category_var])
+    if contingency_table.empty or contingency_table.shape[1] == 0:
+        logging.warning(f"Contingency table is empty for variable '{category_var}'.")
+        return
     chi2, p, dof, expected = stats.chi2_contingency(contingency_table)
     test_results.append({
         'Variable': category_var,
@@ -172,7 +202,7 @@ def perform_chi_squared_test(category_var, data, test_results):
 
 # ----------------------- Processing Functions -----------------------
 
-def fetch_lichess_games(username, max_games=50):
+def fetch_lichess_games(username, max_games=1):
     url = f'https://lichess.org/api/games/user/{username}'
     params = {
         'max': max_games,
@@ -210,7 +240,7 @@ def process_pgn_file(pgn_file_path, max_games=None):
         logging.error(f"Failed to read PGN file: {e}")
     return games
 
-def process_games(games, group_label, engine, max_depth=7):
+def process_games(games, group_label, engine, max_depth=2):
     all_moves = []
     for game in tqdm(games, desc=f"Processing {group_label} games"):
         try:
@@ -229,6 +259,7 @@ def process_games(games, group_label, engine, max_depth=7):
             move_number = 0
             prev_eval = None
             current_material = calculate_material(board)
+            prev_time_remaining = None  # Initialize before the loop
 
             while node.variations:
                 next_node = node.variations[0]
@@ -246,8 +277,10 @@ def process_games(games, group_label, engine, max_depth=7):
                 board.push(move)
 
                 # Calculate time spent
-                if time_remaining is not None and 'TimeRemaining' in locals():
+                if time_remaining is not None and prev_time_remaining is not None:
                     time_spent = prev_time_remaining - time_remaining
+                    if time_spent < 0:
+                        time_spent = None  # Handle clock resets or increments
                 else:
                     time_spent = None
                 
@@ -320,7 +353,7 @@ def categorize_move_condition(board, move, engine):
     """
     try:
         # Get the evaluation before the move
-        analysis = engine.analyse(board, chess.engine.Limit(depth=7))
+        analysis = engine.analyse(board, chess.engine.Limit(depth=2))
         eval_before = analysis['score'].white().score(mate_score=100000)
         
         # Generate legal moves and evaluate them
@@ -328,7 +361,7 @@ def categorize_move_condition(board, move, engine):
         for legal_move in board.legal_moves:
             try:
                 board.push(legal_move)
-                analysis = engine.analyse(board, chess.engine.Limit(depth=7))
+                analysis = engine.analyse(board, chess.engine.Limit(depth=2))
                 eval_after = analysis['score'].white().score(mate_score=100000)
                 board.pop()
                 move_scores.append((legal_move, eval_after))
@@ -399,7 +432,7 @@ def plot_accuracy_vs_time(df, test_results):
     
     plt.figure(figsize=(10,6))
     sns.scatterplot(x='TimeSpent', y='EvalChange', hue='Group', data=df, alpha=0.3, palette='Set1')
-    sns.lineplot(x='TimeSpent', y='EvalChange', hue='Group', data=df, ci=None, estimator='mean', palette='Set1')
+    sns.lineplot(x='TimeSpent', y='EvalChange', hue='Group', data=df, estimator='mean', palette='Set1')
     plt.title('Move Accuracy Relative to Move Time')
     plt.xlabel('Time Spent on Move (seconds)')
     plt.ylabel('Evaluation Change (centipawns)')
@@ -500,7 +533,7 @@ def main():
     adhd_games = []
     for username in ADHD_USERNAMES:
         logging.info(f"Fetching games for user '{username}'...")
-        user_games = fetch_lichess_games(username, max_games=50)  # Adjust max_games as needed
+        user_games = fetch_lichess_games(username, max_games=2)  # Adjust max_games as needed
         adhd_games.extend(user_games)
     
     if not adhd_games:
@@ -522,11 +555,12 @@ def main():
     
     logging.info("Processing ADHD players' games...")
     adhd_moves_df = process_games(adhd_games, group_label='ADHD', engine=engine)
+    debug_data_pipeline(adhd_moves_df, "ADHD GAMES PROCESSING")
     
     # ----------------------- 3. Fetch and Process General Population Games -----------------------
     
     logging.info("Fetching general population games...")
-    general_games = process_pgn_file(GENERAL_PGN_FILE_PATH, max_games=450)  # Adjust max_games as needed
+    general_games = process_pgn_file(GENERAL_PGN_FILE_PATH, max_games=20)  # Adjust max_games as needed
     
     if not general_games:
         logging.warning("No General population games to process.")
@@ -602,3 +636,4 @@ def main():
 # ----------------------- Execute the Script -----------------------
 if __name__ == "__main__":
     main()
+
