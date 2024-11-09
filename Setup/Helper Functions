@@ -1,5 +1,16 @@
 
 # These functions are to help provide data about issues we've been having with the code concerning null-values in the data frame 
+
+#importing necessary packages
+
+import re
+import pandas as pd
+import chess
+import logging
+from scipy import stats
+
+
+
 def debug_data_pipeline(df, stage_name):
     print(f"\n=== Debugging {stage_name} ===")
     print(f"DataFrame shape: {df.shape}")
@@ -24,15 +35,16 @@ def safe_int(value, default=None):
     except (ValueError, TypeError):
         return default
 
-def parse_clock_time(comment):
-    # Extract clock time from comment, e.g., "%clk 1:23:45.678"
+#This is where we've been having serious issues with clock times 
+def extract_time(comment):
+    # Extract clock time from comment, [format]: %clk 1:23:45.678"
     match = re.search(r'%clk\s+([\d:.]+)', comment)
     if match:
         time_str = match.group(1)
         time_parts = [float(part) for part in time_str.split(':')]
         # Weights for hours, minutes, seconds
         weights = [3600, 60, 1]
-        weights = weights[-len(time_parts):]
+        weights = weights[-len(time_parts):] 
         seconds = sum(w * t for w, t in zip(weights, time_parts))
         return seconds
     else:
@@ -40,8 +52,8 @@ def parse_clock_time(comment):
         # print(f"Clock time not found in comment: {comment}")
         return None
 
-def parse_evaluation(comment):
-    # Extract evaluation from comment, e.g., "%eval 0.34"
+def parse_eval(comment):
+    # Extract evaluation from PGN-files, EX. "%eval 0.34"
     match = re.search(r'%eval\s+([+-]?[0-9]+(\.[0-9]+)?|#-?[0-9]+)', comment)
     if match:
         eval_str = match.group(1)
@@ -51,8 +63,7 @@ def parse_evaluation(comment):
         else:
             return float(eval_str)
     else:
-        # Uncomment the following line to debug evaluation parsing
-        # print(f"Eval not found in comment: {comment}")
+        print(f"Eval not found in comment: {comment}")
         return None
 
 def categorize_error(eval_change):

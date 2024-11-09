@@ -1,0 +1,34 @@
+
+
+# test_data_processing.py
+
+from data_scraping_and_processing import fetch_adhd_games, process_pgn_games
+import logging
+
+# Enable logging for testing
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+def main():
+    # Test fetching ADHD games
+    print("Fetching ADHD games...")
+    adhd_games = fetch_adhd_games()
+    print(f"Number of ADHD games fetched: {len(adhd_games)}")
+    
+    # Test processing general population PGN games
+    print("\nProcessing general population games...")
+    general_games = process_pgn_games()
+    print(f"Number of general population games processed: {len(general_games)}")
+    
+    # Optionally, print details of the first few games to confirm
+    if adhd_games:
+        print("\nSample ADHD Game Headers:")
+        for game in adhd_games[:2]:
+            print(game.headers)
+    
+    if general_games:
+        print("\nSample General Game Headers:")
+        for game in general_games[:2]:
+            print(game.headers)
+
+if __name__ == "__main__":
+    main()
