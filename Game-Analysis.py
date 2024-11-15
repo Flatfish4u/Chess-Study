@@ -1,21 +1,3 @@
-def debug_data_pipeline(df, stage_name):
-    print(f"\n=== Debugging {stage_name} ===")
-    print(f"DataFrame shape: {df.shape}")
-    print("\nColumns present:", df.columns.tolist())
-    print("\nSample of data (first 5 rows):")
-    print(df.head())
-    print("\nValue counts for key columns:")
-    if "Group" in df.columns:
-        print("\nGroup distribution:")
-        print(df["Group"].value_counts())
-    if "ErrorCategory" in df.columns:
-        print("\nErrorCategory distribution:")
-        print(df["ErrorCategory"].value_counts())
-    print("\nNull values in each column:")
-    print(df.isnull().sum())
-    print("=" * 50)
-
-
 def safe_int(value, default=None):
     try:
         return int(value)
