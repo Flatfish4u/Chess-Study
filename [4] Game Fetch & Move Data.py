@@ -1,4 +1,4 @@
-def fetch_lichess_games(username, max_games=2000):  # Increase max_games
+def fetch_lichess_games(username, max_games=20):  # Increase max_games
     url = f"https://lichess.org/api/games/user/{username}"
     params = {
         "max": max_games,
@@ -89,12 +89,19 @@ def process_games(games, group_label, engine, max_depth=2):
             white_elo = safe_int(game.headers.get("WhiteElo", None))
             black_elo = safe_int(game.headers.get("BlackElo", None))
             time_control = game.headers.get("TimeControl", "Unknown")
+            
+            # Determine which player (if any) has ADHD
+            white_has_adhd = white in ADHD_USERNAMES
+            black_has_adhd = black in ADHD_USERNAMES
+
+            initial_time, increment, time_category = parse_time_control(time_control)
 
             node = game
             move_number = 0
-            prev_eval = None
+            prev_evaluation = None
             current_material = calculate_material(board)
-            prev_time_remaining = None  # Initialize before the loop
+            prev_time_remaining = None
+            prev_winning_chances = None
 
             # Check if the game has evaluations
             has_evaluation = False
@@ -116,34 +123,58 @@ def process_games(games, group_label, engine, max_depth=2):
                 san = board.san(move)
                 move_number += 1
                 player = "White" if board.turn else "Black"
+                
+                # Determine ADHD status for this specific move
+                is_adhd_move = (player == "White" and white_has_adhd) or \
+                              (player == "Black" and black_has_adhd)
 
-                # Extract clock time and evaluation from comments
+                # Extract clock eval from PGN comments
                 comment = next_node.comment
                 time_remaining = parse_clock_time(comment)
-                eval = parse_evaluation(comment)
+                evaluation = parse_evaluation(comment)
+
+                # TimeCalc
+                if time_remaining is not None and prev_time_remaining is not None:
+                    time_spent = prev_time_remaining - time_remaining
+                    if time_spent < 0:
+                        time_spent = None
+                else:
+                    time_spent = None
+                
+                # TimePressure
+                under_pressure = is_under_time_pressure(
+                    time_remaining=time_remaining,
+                    initial_time=initial_time,
+                    time_spent=time_spent
+                )
+
+                # Calculate winning chances
+                winning_chances = eval_winning_chances(evaluation)
+
+                # Calculate winning chances change
+                if prev_winning_chances is not None and winning_chances is not None:
+                    winning_chances_change = winning_chances - prev_winning_chances
+                else:
+                    winning_chances_change = None
 
                 # Skip moves without evaluations
-                if eval is None:
+                if evaluation is None:
                     board.push(move)
                     node = next_node
                     prev_time_remaining = time_remaining
                     current_material = calculate_material(board)
+                    prev_winning_chances = winning_chances
                     continue
 
                 # Apply the move to the board
                 board.push(move)
 
-                # Calculate time spent
-                if time_remaining is not None and prev_time_remaining is not None:
-                    time_spent = prev_time_remaining - time_remaining
-                    if time_spent < 0:
-                        time_spent = None  # Handle clock increments or time resets
-                else:
-                    time_spent = None
-
-                # Eval change
-                if prev_eval is not None and eval is not None:
-                    eval_change = eval - prev_eval
+                # Evaluation change
+                if prev_evaluation is not None and evaluation is not None:
+                    if isinstance(evaluation, str) or isinstance(prev_evaluation, str):
+                        eval_change = None
+                    else:
+                        eval_change = evaluation - prev_evaluation
                 else:
                     eval_change = None
 
@@ -161,45 +192,58 @@ def process_games(games, group_label, engine, max_depth=2):
                 game_phase = categorize_game_phase(move_number)
 
                 # Categorize position complexity based on previous evaluation
-                position_complexity = categorize_position_complexity(prev_eval)
+                position_complexity = categorize_position_complexity(prev_evaluation)
 
-                # Move condition (after move applied)
-                move_condition = "Unknown"  # Placeholder
+                # Move condition
+                move_condition = "Unknown"
 
+                # Append move data to the list
                 move_data = {
-                    "GameID": game_id,
-                    "Event": event,
-                    "Date": date,
-                    "White": white,
-                    "Black": black,
-                    "Result": result,
-                    "WhiteElo": white_elo,
-                    "BlackElo": black_elo,
-                    "TimeControl": time_control,
-                    "MoveNumber": move_number,
-                    "Player": player,
-                    "Move": san,
-                    "TimeRemaining": time_remaining,
-                    "TimeSpent": time_spent,
-                    "Evaluation": eval,
-                    "EvalChange": eval_change,
-                    "UnderTimePressure": time_remaining is not None
-                    and time_remaining < 20,
-                    "Group": group_label,
-                    "ErrorCategory": error_category,
-                    "IsSacrifice": is_sacrifice,
-                    "GamePhase": game_phase,
-                    "PositionComplexity": position_complexity,
-                    "MoveCondition": move_condition,
+                    'GameID': game_id,
+                    'Event': event,
+                    'Date': date,
+                    'White': white,
+                    'Black': black,
+                    'Result': result,
+                    'WhiteElo': white_elo,
+                    'BlackElo': black_elo,
+                    'TimeControl': time_control,
+                    'MoveNumber': move_number,
+                    'Player': player,
+                    'SAN': san,
+                    'Evaluation': evaluation,
+                    'EvalChange': eval_change,
+                    'ErrorCategory': error_category,
+                    'TimeControlCategory': time_category.value,
+                    'UnderTimePressure': under_pressure,
+                    'InitialTimeSeconds': initial_time,
+                    'IncrementSeconds': increment,
+                    'TimeRemaining': time_remaining,
+                    'TimeSpent': time_spent,
+                    'MaterialDiff': material_diff,
+                    'IsSacrifice': is_sacrifice,
+                    'GamePhase': game_phase,
+                    'PositionComplexity': position_complexity,
+                    'MoveCondition': move_condition,
+                    'IsADHDMove': is_adhd_move,
+                    'ADHDPlayer': white if white_has_adhd else (black if black_has_adhd else None),
+                    'Group': 'ADHD' if is_adhd_move else 'Control'
                 }
+
                 all_moves.append(move_data)
 
-                # Update for next iteration
-                prev_eval = eval
+                # Update previous values for next iteration
+                prev_evaluation = evaluation
                 prev_time_remaining = time_remaining
                 current_material = new_material
+                prev_winning_chances = winning_chances
                 node = next_node
+
         except Exception as e:
-            logging.error(f"Error processing game: {e}")
+            print(f"Error processing game {game_id}: {e}")
             continue
-    return pd.DataFrame(all_moves)
+
+    # Convert the list of moves into a DataFrame and return it
+    moves_df = pd.DataFrame(all_moves)
+    return moves_df
+
