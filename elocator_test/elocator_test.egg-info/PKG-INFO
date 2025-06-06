@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: elocator-test
+Version: 0.1.0
+Summary: Chess position complexity analysis using Elocator API
+Author: Benjamin Rosales
+License: MIT
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=1.9.0
+Requires-Dist: requests>=2.25.0
+Requires-Dist: numpy
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+
+# Elocator Test
+
+Chess position complexity analysis using the Elocator API.
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+## Usage
+
+```python
+from elocator_test.elocator_api import get_position_complexity_with_retry
+from elocator_test.model import ChessModel
+
+# Get complexity score for a position
+complexity = get_position_complexity_with_retry("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+print(f"Position complexity: {complexity}")
+```

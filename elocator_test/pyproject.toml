@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "elocator-test"
+version = "0.1.0"
+description = "Chess position complexity analysis using Elocator API"
+authors = [{name = "Benjamin Rosales"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=1.9.0",
+    "requests>=2.25.0",
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["elocator_test*"]
+
+[tool.setuptools.package-dir]
+"" = "."

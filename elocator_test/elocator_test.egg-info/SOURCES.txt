@@ -1,0 +1,7 @@
+README.md
+pyproject.toml
+elocator_test.egg-info/PKG-INFO
+elocator_test.egg-info/SOURCES.txt
+elocator_test.egg-info/dependency_links.txt
+elocator_test.egg-info/requires.txt
+elocator_test.egg-info/top_level.txt
